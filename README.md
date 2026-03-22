@@ -63,9 +63,3 @@ Run lints (after installing golangci-lint):
 ```powershell
 golangci-lint run
 ```
-
-## Next Improvements
-
-- Persist conversation history to disk.
-- Stream tokens into the UI.
-- Add provider profiles (OpenAI, Azure OpenAI, local Ollama endpoint).
