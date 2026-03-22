@@ -2,6 +2,8 @@
 
 Starter desktop chatbot built with Go and Fyne, wired to an OpenAI-compatible Chat Completions API.
 
+![Go Chatbot screenshot](image.png)
+
 ## Requirements
 
 - Go 1.23+

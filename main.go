@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"strings"
 	"time"
@@ -28,7 +27,7 @@ type uiState struct {
 	service        *chat.Service
 	requestTimeout time.Duration
 
-	chatLog     *widget.Entry
+	chatLog     *widget.RichText
 	status      *widget.Label
 	promptInput *widget.Entry
 	sendBtn     *widget.Button
@@ -52,6 +51,8 @@ func main() {
 	}
 
 	ui := newUI(chatService, cfg)
+	ui.window.CenterOnScreen()
+	ui.window.RequestFocus()
 	ui.window.ShowAndRun()
 }
 
@@ -80,18 +81,23 @@ func newUI(service *chat.Service, cfg config.Config) uiApp {
 }
 
 func newUIState(service *chat.Service, cfg config.Config) *uiState {
-	chatLog := widget.NewMultiLineEntry()
-	chatLog.SetPlaceHolder("Conversation appears here...")
+	chatLog := widget.NewRichTextWithText("")
+	chatLog.Segments = nil
 	chatLog.Wrapping = fyne.TextWrapWord
-	chatLog.Disable()
 
 	status := widget.NewLabel("Ready")
+	status.TextStyle = fyne.TextStyle{Italic: true}
+
 	promptInput := widget.NewMultiLineEntry()
-	promptInput.SetPlaceHolder("Ask something...")
+	promptInput.SetPlaceHolder("Type your message and press Enter or click Send...")
 	promptInput.Wrapping = fyne.TextWrapWord
+	promptInput.SetMinRowsVisible(4)
 
 	sendBtn := widget.NewButtonWithIcon("Send", theme.MailSendIcon(), nil)
+	sendBtn.Importance = widget.HighImportance
+
 	clearBtn := widget.NewButtonWithIcon("Clear", theme.DeleteIcon(), nil)
+	clearBtn.Importance = widget.DangerImportance
 
 	return &uiState{
 		service:        service,
@@ -105,8 +111,10 @@ func newUIState(service *chat.Service, cfg config.Config) *uiState {
 }
 
 func buildContent(state *uiState) fyne.CanvasObject {
-	controls := container.NewBorder(nil, nil, state.clearBtn, state.sendBtn, state.promptInput)
-	return container.NewBorder(nil, state.status, nil, nil, container.NewVSplit(state.chatLog, controls))
+	btnRow := container.NewGridWithColumns(2, state.clearBtn, state.sendBtn)
+	inputArea := container.NewBorder(nil, btnRow, nil, nil, state.promptInput)
+	bottom := container.NewVBox(widget.NewSeparator(), inputArea, state.status)
+	return container.NewBorder(nil, bottom, nil, nil, container.NewVScroll(state.chatLog))
 }
 
 func (s *uiState) bindHandlers() {
@@ -119,7 +127,8 @@ func (s *uiState) bindHandlers() {
 
 func (s *uiState) clear() {
 	s.service.Clear()
-	s.chatLog.SetText("")
+	s.chatLog.Segments = nil
+	s.chatLog.Refresh()
 	s.status.SetText("Cleared")
 }
 
@@ -150,14 +159,37 @@ func (s *uiState) send() {
 }
 
 func (s *uiState) appendMessage(role, msg string) {
-	current := strings.TrimSpace(s.chatLog.Text)
-	line := fmt.Sprintf("%s: %s", role, strings.TrimSpace(msg))
-	if current == "" {
-		s.chatLog.SetText(line)
-		return
+	var roleColor fyne.ThemeColorName
+	switch role {
+	case "You":
+		roleColor = theme.ColorNamePrimary
+	case "Assistant":
+		roleColor = theme.ColorNameSuccess
+	default:
+		roleColor = theme.ColorNameError
 	}
 
-	s.chatLog.SetText(current + "\n\n" + line)
+	if len(s.chatLog.Segments) > 0 {
+		s.chatLog.Segments = append(s.chatLog.Segments,
+			&widget.TextSegment{Text: "\n\n"},
+		)
+	}
+
+	s.chatLog.Segments = append(s.chatLog.Segments,
+		&widget.TextSegment{
+			Style: widget.RichTextStyle{
+				ColorName: roleColor,
+				TextStyle: fyne.TextStyle{Bold: true},
+				Inline:    true,
+			},
+			Text: role + ": ",
+		},
+		&widget.TextSegment{
+			Style: widget.RichTextStyle{Inline: true},
+			Text:  strings.TrimSpace(msg),
+		},
+	)
+	s.chatLog.Refresh()
 }
 
 func (s *uiState) setBusy(busy bool) {
