@@ -45,7 +45,7 @@ func TestLoadFromEnv(t *testing.T) {
 				"LLM_API_KEY":  "key",
 				"LLM_BASE_URL": "://bad",
 			},
-			wantErr: errors.New("LLM_BASE_URL must be a valid URL"),
+			wantErr: ErrInvalidBaseURL,
 		},
 	}
 
@@ -62,11 +62,8 @@ func TestLoadFromEnv(t *testing.T) {
 
 			cfg, err := LoadFromEnv()
 			if tt.wantErr != nil {
-				if err == nil {
-					t.Fatalf("expected error %q, got nil", tt.wantErr)
-				}
-				if err.Error() != tt.wantErr.Error() {
-					t.Fatalf("expected error %q, got %q", tt.wantErr, err)
+				if !errors.Is(err, tt.wantErr) {
+					t.Fatalf("expected error %v, got %v", tt.wantErr, err)
 				}
 				return
 			}

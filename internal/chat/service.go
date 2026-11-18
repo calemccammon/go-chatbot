@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 
 	"go-chatbot/internal/llm"
 )
@@ -23,7 +24,9 @@ type Completer interface {
 }
 
 // Service manages chat history and sends requests to an LLM client.
+// It is safe for concurrent use. Send holds the lock for the whole request.
 type Service struct {
+	mu      sync.Mutex
 	client  Completer
 	history []llm.Message
 }
@@ -49,17 +52,23 @@ func NewService(client Completer, systemPrompt string) (*Service, error) {
 }
 
 // Send appends a user prompt, requests a response, and stores assistant output.
+// If the request fails, the prompt is removed from the history again.
 func (s *Service) Send(ctx context.Context, prompt string) (string, error) {
 	trimmed := strings.TrimSpace(prompt)
 	if trimmed == "" {
 		return "", ErrEmptyMessage
 	}
 
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	s.history = append(s.history, llm.Message{Role: "user", Content: trimmed})
 	historySnapshot := append([]llm.Message(nil), s.history...)
 
 	reply, err := s.client.Chat(ctx, historySnapshot)
 	if err != nil {
+		// Drop the unanswered prompt so a retry does not send two user turns in a row.
+		s.history = s.history[:len(s.history)-1]
 		return "", err
 	}
 
@@ -69,6 +78,9 @@ func (s *Service) Send(ctx context.Context, prompt string) (string, error) {
 
 // Clear removes all messages except the initial system prompt.
 func (s *Service) Clear() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if len(s.history) == 0 {
 		return
 	}
@@ -77,5 +89,8 @@ func (s *Service) Clear() {
 
 // History returns a copy of the current message history.
 func (s *Service) History() []llm.Message {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	return append([]llm.Message(nil), s.history...)
 }
