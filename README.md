@@ -73,10 +73,10 @@ Run lints (after installing golangci-lint):
 golangci-lint run
 ```
 
-CI runs the tests and golangci-lint on `./internal/...` only. It does not build `main.go`, so the Fyne UI has no automated check.
+CI installs Fyne's Linux build dependencies, builds and vets the whole module including `main.go`, runs the tests, and runs golangci-lint on `./internal/...`. The UI is compiled but has no tests of its own.
 
 ## Limitations
 
 - Replies are not streamed. The full response appears when the request completes.
 - The conversation lives in memory only. The whole history is sent with every request and is never trimmed.
-- The HTTP client times out after 60 seconds.
+- A request times out after 90 seconds.

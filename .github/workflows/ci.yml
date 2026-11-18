@@ -20,8 +20,21 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Run internal tests
-        run: go test ./internal/...
+      # Fyne builds with CGO against OpenGL and X11, so the desktop headers
+      # have to be present before the UI package will compile.
+      - name: Install Fyne build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc libgl1-mesa-dev xorg-dev libxkbcommon-dev
+
+      - name: Build the application
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Run tests
+        run: go test ./...
 
       - name: Run golangci-lint on internal packages
         uses: golangci/golangci-lint-action@v6
