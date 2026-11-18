@@ -12,6 +12,9 @@ import (
 	"time"
 )
 
+// ErrNoChoices is returned when the API answers successfully with an empty choices list.
+var ErrNoChoices = errors.New("no choices returned by model")
+
 // Message represents a single role/content item in a chat conversation.
 type Message struct {
 	Role    string `json:"role"`
@@ -45,7 +48,8 @@ type Client struct {
 }
 
 // NewClient builds an OpenAI-compatible chat client from validated settings.
-func NewClient(apiKey, baseURL, model string) (*Client, error) {
+// timeout bounds each request, including reading the response body.
+func NewClient(apiKey, baseURL, model string, timeout time.Duration) (*Client, error) {
 	if strings.TrimSpace(apiKey) == "" {
 		return nil, errors.New("LLM_API_KEY is required")
 	}
@@ -57,7 +61,7 @@ func NewClient(apiKey, baseURL, model string) (*Client, error) {
 	}
 
 	return &Client{
-		httpClient: &http.Client{Timeout: 60 * time.Second},
+		httpClient: &http.Client{Timeout: timeout},
 		apiKey:     apiKey,
 		baseURL:    strings.TrimSuffix(baseURL, "/"),
 		model:      model,
@@ -108,7 +112,7 @@ func (c *Client) Chat(ctx context.Context, history []Message) (string, error) {
 		return "", fmt.Errorf("parse response: %w", err)
 	}
 	if len(parsed.Choices) == 0 {
-		return "", errors.New("no choices returned by model")
+		return "", ErrNoChoices
 	}
 
 	return parsed.Choices[0].Message.Content, nil

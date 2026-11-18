@@ -3,17 +3,23 @@ package chat
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 
 	"go-chatbot/internal/llm"
 )
 
+var errBoom = errors.New("boom")
+
+// mockCompleter returns a canned reply or error and records the history it was given.
 type mockCompleter struct {
 	reply string
 	err   error
+	got   []llm.Message
 }
 
-func (m *mockCompleter) Chat(_ context.Context, _ []llm.Message) (string, error) {
+func (m *mockCompleter) Chat(_ context.Context, history []llm.Message) (string, error) {
+	m.got = history
 	if m.err != nil {
 		return "", m.err
 	}
@@ -35,7 +41,7 @@ func TestNewService(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := NewService(tt.client, tt.prompt)
 			if tt.wantErr != nil {
-				if err == nil || err.Error() != tt.wantErr.Error() {
+				if !errors.Is(err, tt.wantErr) {
 					t.Fatalf("expected %v, got %v", tt.wantErr, err)
 				}
 				return
@@ -64,8 +70,8 @@ func TestSend(t *testing.T) {
 		{
 			name:      "upstream error",
 			input:     "hello",
-			completer: &mockCompleter{err: errors.New("boom")},
-			wantErr:   errors.New("boom"),
+			completer: &mockCompleter{err: errBoom},
+			wantErr:   errBoom,
 		},
 		{
 			name:      "success",
@@ -84,8 +90,8 @@ func TestSend(t *testing.T) {
 
 			reply, err := svc.Send(context.Background(), tt.input)
 			if tt.wantErr != nil {
-				if err == nil || err.Error() != tt.wantErr.Error() {
-					t.Fatalf("expected error %q, got %v", tt.wantErr, err)
+				if !errors.Is(err, tt.wantErr) {
+					t.Fatalf("expected error %v, got %v", tt.wantErr, err)
 				}
 				return
 			}
@@ -96,6 +102,67 @@ func TestSend(t *testing.T) {
 				t.Fatalf("expected reply %q, got %q", tt.wantReply, reply)
 			}
 		})
+	}
+}
+
+func TestSendPassesHistoryToClient(t *testing.T) {
+	completer := &mockCompleter{reply: "first reply"}
+	svc, err := NewService(completer, "be brief")
+	if err != nil {
+		t.Fatalf("unexpected setup error: %v", err)
+	}
+
+	if _, err := svc.Send(context.Background(), " hello "); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := []llm.Message{
+		{Role: "system", Content: "be brief"},
+		{Role: "user", Content: "hello"},
+	}
+	if !reflect.DeepEqual(completer.got, want) {
+		t.Fatalf("first request: expected %+v, got %+v", want, completer.got)
+	}
+
+	if _, err := svc.Send(context.Background(), "again"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want = []llm.Message{
+		{Role: "system", Content: "be brief"},
+		{Role: "user", Content: "hello"},
+		{Role: "assistant", Content: "first reply"},
+		{Role: "user", Content: "again"},
+	}
+	if !reflect.DeepEqual(completer.got, want) {
+		t.Fatalf("second request: expected %+v, got %+v", want, completer.got)
+	}
+}
+
+func TestSendFailureLeavesHistoryUnchanged(t *testing.T) {
+	completer := &mockCompleter{err: errBoom}
+	svc, err := NewService(completer, "be brief")
+	if err != nil {
+		t.Fatalf("unexpected setup error: %v", err)
+	}
+
+	if _, err := svc.Send(context.Background(), "hello"); !errors.Is(err, errBoom) {
+		t.Fatalf("expected %v, got %v", errBoom, err)
+	}
+	history := svc.History()
+	if len(history) != 1 || history[0].Role != "system" {
+		t.Fatalf("expected only the system prompt after a failed send, got %+v", history)
+	}
+
+	completer.err = nil
+	completer.reply = "ok"
+	if _, err := svc.Send(context.Background(), "retry"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := []llm.Message{
+		{Role: "system", Content: "be brief"},
+		{Role: "user", Content: "retry"},
+	}
+	if !reflect.DeepEqual(completer.got, want) {
+		t.Fatalf("retry request: expected %+v, got %+v", want, completer.got)
 	}
 }
 

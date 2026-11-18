@@ -40,7 +40,7 @@ func main() {
 		log.Fatalf("config error: %v", err)
 	}
 
-	client, err := llm.NewClient(cfg.APIKey, cfg.BaseURL, cfg.Model)
+	client, err := llm.NewClient(cfg.APIKey, cfg.BaseURL, cfg.Model, cfg.RequestTimeout)
 	if err != nil {
 		log.Fatalf("llm client error: %v", err)
 	}
@@ -63,7 +63,7 @@ type uiApp struct {
 }
 
 func newUI(service *chat.Service, cfg config.Config) uiApp {
-	myApp := app.NewWithID("com.example.go-chatbot")
+	myApp := app.NewWithID("io.github.calemccammon.gochatbot")
 	myWindow := myApp.NewWindow(windowTitle)
 	myWindow.Resize(fyne.NewSize(windowWidth, windowHeight))
 
@@ -89,7 +89,7 @@ func newUIState(service *chat.Service, cfg config.Config) *uiState {
 	status.TextStyle = fyne.TextStyle{Italic: true}
 
 	promptInput := widget.NewMultiLineEntry()
-	promptInput.SetPlaceHolder("Type your message and press Enter or click Send...")
+	promptInput.SetPlaceHolder("Type your message, then press Shift+Enter or click Send...")
 	promptInput.Wrapping = fyne.TextWrapWord
 	promptInput.SetMinRowsVisible(4)
 
@@ -142,20 +142,26 @@ func (s *uiState) send() {
 	s.promptInput.SetText("")
 	s.status.SetText("Thinking...")
 	s.setBusy(true)
-	defer s.setBusy(false)
 
-	ctx, cancel := context.WithTimeout(context.Background(), s.requestTimeout)
-	defer cancel()
+	// Run the request off the event handler so the window keeps responding.
+	// Fyne v2.5 allows widget updates from any goroutine. From v2.6 on these
+	// calls would need to be wrapped in fyne.Do.
+	go func() {
+		defer s.setBusy(false)
 
-	reply, err := s.service.Send(ctx, prompt)
-	if err != nil {
-		s.status.SetText("Request failed")
-		s.appendMessage("System", "Error: "+err.Error())
-		return
-	}
+		ctx, cancel := context.WithTimeout(context.Background(), s.requestTimeout)
+		defer cancel()
 
-	s.appendMessage("Assistant", reply)
-	s.status.SetText("Ready")
+		reply, err := s.service.Send(ctx, prompt)
+		if err != nil {
+			s.status.SetText("Request failed")
+			s.appendMessage("System", "Error: "+err.Error())
+			return
+		}
+
+		s.appendMessage("Assistant", reply)
+		s.status.SetText("Ready")
+	}()
 }
 
 func (s *uiState) appendMessage(role, msg string) {
@@ -195,10 +201,12 @@ func (s *uiState) appendMessage(role, msg string) {
 func (s *uiState) setBusy(busy bool) {
 	if busy {
 		s.sendBtn.Disable()
+		s.clearBtn.Disable()
 		s.promptInput.Disable()
 		return
 	}
 
 	s.sendBtn.Enable()
+	s.clearBtn.Enable()
 	s.promptInput.Enable()
 }

@@ -18,6 +18,8 @@ const (
 var (
 	// ErrMissingAPIKey is returned when LLM_API_KEY is not set.
 	ErrMissingAPIKey = errors.New("LLM_API_KEY is required")
+	// ErrInvalidBaseURL is returned when LLM_BASE_URL does not parse as a URL.
+	ErrInvalidBaseURL = errors.New("LLM_BASE_URL must be a valid URL")
 )
 
 // Config stores runtime values used to initialize the chatbot application.
@@ -43,7 +45,7 @@ func LoadFromEnv() (Config, error) {
 		return Config{}, ErrMissingAPIKey
 	}
 	if _, err := url.ParseRequestURI(cfg.BaseURL); err != nil {
-		return Config{}, errors.New("LLM_BASE_URL must be a valid URL")
+		return Config{}, ErrInvalidBaseURL
 	}
 
 	return cfg, nil
